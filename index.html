@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#05070d">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Bridge">
+<title>Bridge — Claude Queue</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ══════════════════ SETUP ══════════════════ -->
+<section id="setup" class="setup" hidden>
+  <div class="setup-card">
+    <div class="brand"><span class="brand-mark"></span><h1>BRIDGE</h1></div>
+    <p class="setup-lede">Live console for the Claude Queue board.</p>
+    <label for="tokenInput">TickTick Open API token</label>
+    <input id="tokenInput" type="password" autocomplete="off" spellcheck="false"
+           placeholder="paste bearer token">
+    <p class="setup-note">
+      Stored only in this browser and sent only to <code>api.ticktick.com</code>.
+      It is the same token Babel uses &mdash; <code>SleeperService/config.json</code> &rarr;
+      <code>ticktick_token</code>.
+    </p>
+    <button id="setupSave" class="btn btn-primary">CONNECT</button>
+    <p id="setupErr" class="setup-err" hidden></p>
+  </div>
+</section>
+
+<!-- ══════════════════ CONSOLE ══════════════════ -->
+<main id="console" hidden>
+
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark"></span><h1>BRIDGE</h1></div>
+    <div class="topbar-right">
+      <div id="linkState" class="link-state" title="connection">
+        <span class="link-dot"></span><span id="linkLabel">LINK</span>
+      </div>
+      <button id="btnRefresh" class="icon-btn" title="Refresh now" aria-label="Refresh">&#x21bb;</button>
+      <button id="btnNew" class="icon-btn" title="New card" aria-label="New card">&#xff0b;</button>
+      <button id="btnSettings" class="icon-btn" title="Settings" aria-label="Settings">&#x2699;</button>
+    </div>
+    <div class="sweep"><div id="sweepBar" class="sweep-bar"></div></div>
+  </header>
+
+  <div class="grid">
+
+    <section class="panel core-panel" id="corePanel">
+      <div class="panel-head"><span class="panel-title">CORE</span>
+        <span id="coreState" class="panel-tag">&mdash;</span></div>
+      <div class="core-stage">
+        <div id="coreRings" class="rings">
+          <span class="ring r1"></span><span class="ring r2"></span><span class="ring r3"></span>
+          <span class="core-orb"></span>
+        </div>
+      </div>
+      <div class="core-body">
+        <div id="coreTitle" class="core-title">&mdash;</div>
+        <div id="coreMeta" class="core-meta"></div>
+      </div>
+      <button id="coreOpen" class="btn btn-ghost" hidden>OPEN CARD</button>
+    </section>
+
+    <section class="panel gauges-panel">
+      <div class="panel-head"><span class="panel-title">PRESSURE</span>
+        <span id="totalTag" class="panel-tag">&mdash;</span></div>
+      <div id="gauges" class="gauges"></div>
+      <div class="panel-head sys-head">
+        <span class="panel-title">SYSTEM</span>
+        <span class="panel-tag" title="Derived from cards on the board, not from the machine">INFERRED</span>
+      </div>
+      <div id="sysStrip" class="sys-strip"></div>
+    </section>
+
+    <section class="panel list-panel">
+      <div class="panel-head">
+        <span class="panel-title">MANIFEST</span>
+        <span id="filterTag" class="panel-tag">ALL</span>
+      </div>
+      <div id="filters" class="filters"></div>
+      <div id="cardList" class="card-list"></div>
+      <button id="logToggle" class="log-toggle">SHIP&rsquo;S LOG <span id="logCount"></span> &#x25be;</button>
+      <div id="logList" class="card-list log-list" hidden></div>
+    </section>
+
+  </div>
+</main>
+
+<!-- ══════════════════ DETAIL ══════════════════ -->
+<section id="detail" class="detail" hidden>
+  <div class="detail-scrim" data-close></div>
+  <article class="detail-sheet" role="dialog" aria-modal="true" aria-labelledby="dTitle">
+    <header class="detail-head">
+      <button class="icon-btn" data-close aria-label="Close">&#x2715;</button>
+      <span id="dState" class="chip"></span>
+      <span id="dPri" class="chip chip-pri"></span>
+      <span id="dAge" class="detail-age"></span>
+    </header>
+
+    <h2 id="dTitle" class="detail-title"></h2>
+    <div id="dBody" class="detail-body"></div>
+
+    <div class="detail-actions">
+      <div class="action-group">
+        <span class="action-label">STATE</span>
+        <div id="dStateBtns" class="seg"></div>
+      </div>
+      <div class="action-group">
+        <span class="action-label">PICK ORDER</span>
+        <div id="dPriBtns" class="seg"></div>
+      </div>
+
+      <div class="action-group">
+        <span class="action-label">APPEND A NOTE</span>
+        <textarea id="dAppend" rows="3"
+          placeholder="Answer a blocked card, or leave a note for the next run. Appended — never overwrites."></textarea>
+        <button id="dAppendBtn" class="btn btn-primary">APPEND</button>
+      </div>
+
+      <details class="edit-block">
+        <summary>Edit full card body</summary>
+        <textarea id="dEdit" rows="12"></textarea>
+        <button id="dEditBtn" class="btn">SAVE BODY</button>
+      </details>
+
+      <div class="danger-row">
+        <a id="dTickTick" class="btn btn-ghost" target="_blank" rel="noopener">OPEN IN TICKTICK</a>
+        <button id="dComplete" class="btn btn-done">COMPLETE CARD</button>
+      </div>
+      <p class="danger-note">Completing removes the card from the API for good &mdash; its
+        content is not retrievable afterwards.</p>
+    </div>
+    <div id="dStatus" class="detail-status" hidden></div>
+  </article>
+</section>
+
+<!-- ══════════════════ NEW CARD ══════════════════ -->
+<section id="newCard" class="detail" hidden>
+  <div class="detail-scrim" data-close-new></div>
+  <article class="detail-sheet" role="dialog" aria-modal="true">
+    <header class="detail-head">
+      <button class="icon-btn" data-close-new aria-label="Close">&#x2715;</button>
+      <span class="chip">NEW CARD</span>
+    </header>
+    <div class="action-group">
+      <span class="action-label">TITLE</span>
+      <input id="nTitle" type="text" placeholder="[build] short imperative title">
+    </div>
+    <div class="action-group">
+      <span class="action-label">BODY</span>
+      <textarea id="nBody" rows="8" placeholder="What the worker needs to know."></textarea>
+    </div>
+    <div class="action-group">
+      <span class="action-label">STATE</span><div id="nStateBtns" class="seg"></div>
+    </div>
+    <div class="action-group">
+      <span class="action-label">PICK ORDER</span><div id="nPriBtns" class="seg"></div>
+    </div>
+    <button id="nCreate" class="btn btn-primary">CREATE CARD</button>
+    <div id="nStatus" class="detail-status" hidden></div>
+  </article>
+</section>
+
+<!-- ══════════════════ SETTINGS ══════════════════ -->
+<section id="settings" class="detail" hidden>
+  <div class="detail-scrim" data-close-set></div>
+  <article class="detail-sheet detail-sheet-sm" role="dialog" aria-modal="true">
+    <header class="detail-head">
+      <button class="icon-btn" data-close-set aria-label="Close">&#x2715;</button>
+      <span class="chip">SETTINGS</span>
+    </header>
+    <div class="action-group">
+      <span class="action-label">REFRESH EVERY</span>
+      <div id="sPoll" class="seg"></div>
+    </div>
+    <div class="action-group">
+      <span class="action-label">REVIEW BACKLOG REDLINE</span>
+      <p class="hint">The review gauge starts throbbing above this count.</p>
+      <div id="sRed" class="seg"></div>
+    </div>
+    <div class="action-group">
+      <span class="action-label">CONNECTION</span>
+      <p id="sTokenState" class="hint"></p>
+      <button id="sForget" class="btn btn-ghost">FORGET TOKEN ON THIS DEVICE</button>
+    </div>
+    <p class="hint" id="sBuild"></p>
+  </article>
+</section>
+
+<div id="toast" class="toast" hidden></div>
+
+<script src="app.js"></script>
+</body>
+</html>
