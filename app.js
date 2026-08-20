@@ -341,9 +341,15 @@ function renderLog() {
 
 /* ───────────────────────────── detail ───────────────────────────── */
 
+/* Quotes MUST be escaped, not just angle brackets. renderBody() interpolates
+   matched URLs into href="…", so an unescaped " in card text closes the
+   attribute and injects a live event handler — verified exploitable before this
+   was added. Escaping quotes leaves them as &quot; inside the attribute, which
+   decodes harmlessly and cannot break out. */
 function esc(s) {
   return String(s == null ? '' : s)
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 /* Card bodies follow the worker's own conventions — "--- OUTCOME ---" bands,
