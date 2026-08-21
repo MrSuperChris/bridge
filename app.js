@@ -612,6 +612,21 @@ function initSettings() {
     : 'No token stored.';
 }
 
+/* One-scan setup: qr-setup.py renders a QR of <site>#t=<token>, you scan it with the
+   device camera, and the app configures itself. Typing 35 characters on a tablet
+   keyboard is miserable enough that people give up, which is its own security problem.
+
+   The token rides in the URL *fragment*, which browsers never transmit — GitHub Pages
+   never sees it. It is consumed and stripped from the address bar immediately via
+   replaceState so it does not sit on screen or survive a share-sheet. */
+function takeTokenFromUrl() {
+  const m = (location.hash || '').match(/[#&]t=([^&]+)/);
+  if (!m) return null;
+  const tok = decodeURIComponent(m[1]).trim();
+  history.replaceState(null, '', location.pathname + location.search);
+  return tok || null;
+}
+
 function init() {
   app.newState = 'queued';
   app.newPri = 3;
@@ -672,6 +687,22 @@ function init() {
 
   /* Coming back to the tab after it slept should not show a stale board. */
   document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(true); });
+
+  const fromUrl = takeTokenFromUrl();
+  if (fromUrl) {
+    app.token = fromUrl;
+    $('#setup').hidden = false;
+    $('#setupErr').hidden = true;
+    getBoard()
+      .then(() => { localStorage.setItem(LS.token, fromUrl); showConsole(); })
+      .catch(e => {
+        app.token = localStorage.getItem(LS.token) || '';
+        $('#setupErr').hidden = false;
+        $('#setupErr').textContent = 'Scanned token rejected: ' + e.message;
+        if (app.token) showConsole();
+      });
+    return;
+  }
 
   if (app.token) showConsole(); else $('#setup').hidden = false;
 
