@@ -117,7 +117,30 @@ token so you skip the setup screen; `python dev-token.py --clean` removes it.
 
 ### Installing on phone / iPad
 
-Open the deployed URL, then Add to Home Screen. It runs standalone, with its own icon.
+Live at **https://mrsuperchris.github.io/bridge/**
+
+On iPad, open it in **Safari** (not Chrome — Add to Home Screen is a Safari feature on iPadOS),
+then Share → Add to Home Screen. Same on Android via Chrome → ⋮ → Add to Home screen. It runs
+standalone with its own icon.
+
+Paste the token once per device. Get it with:
+
+```powershell
+(Get-Content C:/Users/Chris/claude/SleeperService/config.json -Raw | ConvertFrom-Json).ticktick_token
+```
+
+### Security posture
+
+- **The repo is public and contains no secrets.** The token is gitignored and lives only in each
+  device's `localStorage`. A stranger who finds the URL gets the setup screen and nothing else.
+- **Origin is shared.** GitHub Pages serves every repo from `mrsuperchris.github.io`, and
+  `localStorage` is scoped per *origin*, not per path — so this token shares a jar with Babel,
+  I Ching and Tachometer. Babel already stores the same token there, so this is not new exposure,
+  but one compromised dependency in any of those apps would reach it.
+- **Blast radius if it leaks:** read/write on TickTick tasks only. Regenerate the token in
+  TickTick's developer console to revoke it instantly.
+- Card bodies are escaped including quotes — see the XSS note in the commit history; card text
+  is not all hand-written, so it is treated as untrusted.
 
 The service worker caches **only the app shell** — never board data. A cached queue displayed as
 though it were live is precisely the stale-indicator failure G8 is about.
