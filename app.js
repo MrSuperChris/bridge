@@ -632,6 +632,12 @@ function init() {
     }
   };
   $('#tokenInput').addEventListener('keydown', e => { if (e.key === 'Enter') $('#setupSave').click(); });
+  $('#tokenReveal').onclick = () => {
+    const i = $('#tokenInput');
+    const show = i.type === 'password';
+    i.type = show ? 'text' : 'password';
+    $('#tokenReveal').textContent = show ? 'HIDE' : 'SHOW';
+  };
 
   $('#btnRefresh').onclick  = () => refresh();
   $('#btnSettings').onclick = () => { initSettings(); $('#settings').hidden = false; };

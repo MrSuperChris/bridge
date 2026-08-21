@@ -23,8 +23,15 @@
     <div class="brand"><span class="brand-mark"></span><h1>BRIDGE</h1></div>
     <p class="setup-lede">Live console for the Claude Queue board.</p>
     <label for="tokenInput">TickTick Open API token</label>
-    <input id="tokenInput" type="password" autocomplete="off" spellcheck="false"
-           placeholder="paste bearer token">
+    <!-- autocapitalize/autocorrect off matter on iPadOS: the token is all lowercase and
+         iOS will happily capitalise the first character or "correct" a run of letters. -->
+    <div class="token-row">
+      <input id="tokenInput" type="password" autocomplete="off" autocapitalize="none"
+             autocorrect="off" spellcheck="false" inputmode="text"
+             placeholder="paste or type token">
+      <button id="tokenReveal" class="icon-btn" type="button"
+              aria-label="Show token">SHOW</button>
+    </div>
     <p class="setup-note">
       Stored only in this browser and sent only to <code>api.ticktick.com</code>.
       It is the same token Babel uses &mdash; <code>SleeperService/config.json</code> &rarr;

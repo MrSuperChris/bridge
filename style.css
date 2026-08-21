@@ -478,6 +478,14 @@ textarea:focus, input:focus { outline: none; border-color: rgba(36,214,240,.55);
 .setup-card .brand { margin-bottom: 4px; }
 .setup-lede { font: 400 13.5px/1.55 var(--sans); color: var(--ink-dim); margin: 0 0 6px; }
 .setup-card label { font: 600 10px/1 var(--mono); letter-spacing: .2em; color: var(--ink-faint); }
+/* Reveal toggle: a 35-character token typed blind on a tablet is a coin flip. */
+.token-row { display: flex; gap: 8px; align-items: stretch; }
+.token-row input { flex: 1 1 auto; min-width: 0; }
+.token-row .icon-btn {
+  width: auto; padding: 0 12px; flex: none;
+  font: 600 10px/1 var(--mono); letter-spacing: .12em;
+}
+#tokenInput { font-family: var(--mono); font-size: 15px; letter-spacing: .04em; }
 .setup-note { font: 400 11.5px/1.6 var(--sans); color: var(--ink-faint); margin: 2px 0 6px; }
 .setup-note code { font-family: var(--mono); font-size: 11px; color: #9ab6dd; }
 .setup-err { font: 500 12px/1.5 var(--mono); color: var(--blocked); margin: 0; }
