@@ -565,12 +565,19 @@ async function setState(c, key) {
     const fresh = await getTask(c.id).catch(() => c.raw);
     fields.title = retitle(fresh.title || c.title, s.glyph);
   }
-  await guarded(async () => {
+  const ok = await guarded(async () => {
     await writeField(c.id, fields);
     return `State → ${s.glyph} ${s.label}, ` +
            `${DUAL_ENCODE ? 'column and prefix both' : 'column'} confirmed on read-back.`;
   }, '#dStatus');
-  if (app.open) openCard(c.id);
+  /* Only re-open on success. openCard() clears #dStatus, so re-opening after a
+     failure wiped the one message saying WHICH field did not stick, leaving a
+     3-second "Write failed" toast as the entire report. That guts the probe
+     above: a silently dropped columnId would read as a shrug. Verified by
+     forcing a drop client-side — the sheet now holds and keeps
+     "columnId: wanted X, stored Y".
+     setPriority/appendNote/saveBody still have this same pattern. */
+  if (ok && app.open) openCard(c.id);
 }
 
 async function setPriority(c, v) {
