@@ -576,17 +576,18 @@ async function setState(c, key) {
      above: a silently dropped columnId would read as a shrug. Verified by
      forcing a drop client-side — the sheet now holds and keeps
      "columnId: wanted X, stored Y".
-     setPriority/appendNote/saveBody still have this same pattern. */
+     setPriority/appendNote/saveBody guard the same way, for the same reason. */
   if (ok && app.open) openCard(c.id);
 }
 
 async function setPriority(c, v) {
   if (v === c.priority) return;
-  await guarded(async () => {
+  const ok = await guarded(async () => {
     await writeField(c.id, { priority: v });
     return `Pick order → ${v || 'none'}, confirmed on read-back.`;
   }, '#dStatus');
-  if (app.open) openCard(c.id);
+  /* Success only — see setState: openCard() would wipe the failure message. */
+  if (ok && app.open) openCard(c.id);
 }
 
 /* Read-then-append. The card body is shared memory between Chris and every
@@ -594,25 +595,27 @@ async function setPriority(c, v) {
 async function appendNote(c) {
   const text = $('#dAppend').value.trim();
   if (!text) { status('#dStatus', 'Nothing to append.', 'err'); return; }
-  await guarded(async () => {
+  const ok = await guarded(async () => {
     const fresh = await getTask(c.id);
     const block = `\n\n--- CHRIS ${localStamp()} (via Bridge) ---\n${text}`;
     const next = (fresh.content || '') + block;
     await writeField(c.id, { content: next });
     return 'Appended and verified — earlier content intact.';
   }, '#dStatus');
-  if (app.open) openCard(c.id);
+  /* Success only — see setState: openCard() would wipe the failure message. */
+  if (ok && app.open) openCard(c.id);
 }
 
 async function saveBody(c) {
   const next = $('#dEdit').value;
   if (next === (c.content || '')) { status('#dStatus', 'No change.', 'err'); return; }
   if (!confirm('Replace the entire card body? Anything removed here is gone from the card.')) return;
-  await guarded(async () => {
+  const ok = await guarded(async () => {
     await writeField(c.id, { content: next });
     return 'Body replaced and verified.';
   }, '#dStatus');
-  if (app.open) openCard(c.id);
+  /* Success only — see setState: openCard() would wipe the failure message. */
+  if (ok && app.open) openCard(c.id);
 }
 
 async function completeCard(c) {
