@@ -15,6 +15,9 @@
        prior "⚙claude:" / OUTCOME lines are gone.
      · A 200 proves nothing. Every write GETs the task back and confirms the value
        actually stored, and reports a real failure when it did not.
+     · State is the kanban COLUMN. While the board stays dual-encoded, the column
+       and the legacy emoji prefix travel in ONE POST — two writes could half-
+       apply and recreate exactly the desync this replaced.
    ========================================================================= */
 
 'use strict';
@@ -25,18 +28,59 @@ const TT_WEB   = 'https://ticktick.com/webapp/#p/' + QUEUE_ID + '/tasks/';
 
 const LS = { token: 'bridge.token', poll: 'bridge.poll', red: 'bridge.redline', log: 'bridge.log' };
 
-/* Workflow states live as an emoji prefix on the card title — TickTick's Open API
-   cannot write tags or kanban columns, so the prefix is the only state channel
-   there is (see ECOSYSTEM.md F4). Everything here reads and writes that prefix. */
+/* Workflow state is the kanban COLUMN a card sits in.
+
+   ECOSYSTEM.md constraint F4 says the Open API "can't write tags or kanban
+   columns". For columns that is FALSE in both directions — probed 2026-08-25
+   against api.ticktick.com/open/v1, the same surface this app uses:
+     · a partial POST CAN set columnId, and TickTick resolves columnName from it
+     · a partial POST CAN move a card between columns
+     · a title-only POST leaves an existing columnId untouched
+   That last one is why the old design was worse than it looked. Writing only the
+   title prefix never ejected a card from its column — it left the column STALE,
+   so the two encodings drifted apart silently with nothing on screen to say so.
+   (F4 may still hold for tags. Nothing here sends tags either way.)
+
+   `col` is an id, never a name: renaming a column in the TickTick UI must not
+   silently re-bucket the board. Ids confirmed against the project's own column
+   listing, not copied from a doc. */
+const COLUMNS = {
+  queued:  '6a8e3dc38f086ae6e266333d',   // "Queued"
+  active:  '6a8e3dc58f086ae6e2663358',   // "Working"
+  review:  '6a8e3dc68f0800ee150f8fe1',   // "Needs Review"
+  blocked: '6a8e3dc88f08b397ec1c1f09',   // "Blocked"
+  done:    '6a8e3dca8f0800ee150f902a',   // "Done"
+};
+/* TickTick's own default bucket. A card here is UNFILED — it has a column but
+   that column carries no state. NOT the same as a card with no columnId at all
+   (run output, never filed); see classify() for why the difference matters. */
+const UNFILED_COL = '6a665dfdad29ee62acac4bac';   // "Not Sectioned"
+
 const STATES = [
-  { key: 'queued',  glyph: '⬜', label: 'INTAKE',  color: 'var(--intake)',  cap: 8 },
-  { key: 'active',  glyph: '🔄', label: 'ACTIVE',  color: 'var(--active)',  cap: 1 },
-  { key: 'review',  glyph: '👀', label: 'REVIEW',  color: 'var(--review)',  cap: 12 },
-  { key: 'blocked', glyph: '⛔', label: 'BLOCKED', color: 'var(--blocked)', cap: 3 },
+  { key: 'queued',  glyph: '⬜', label: 'INTAKE',  color: 'var(--intake)',  cap: 8,  col: COLUMNS.queued  },
+  { key: 'active',  glyph: '🔄', label: 'ACTIVE',  color: 'var(--active)',  cap: 1,  col: COLUMNS.active  },
+  { key: 'review',  glyph: '👀', label: 'REVIEW',  color: 'var(--review)',  cap: 12, col: COLUMNS.review  },
+  { key: 'blocked', glyph: '⛔', label: 'BLOCKED', color: 'var(--blocked)', cap: 3,  col: COLUMNS.blocked },
 ];
+/* Reverse lookup, derived from STATES so the two cannot drift apart. */
+const COL_STATE = Object.fromEntries(STATES.map(s => [s.col, s.key]));
+
+/* The board is DUAL-ENCODED on purpose: state lives in the column (the real
+   channel) and, redundantly, in the emoji title prefix (the old one). The
+   dispatcher, triage and expire_reports still read the prefix, so bridge keeps
+   writing both — one POST, both fields, land-or-fail together.
+
+   Do not flip this to false until nothing else reads the prefix. The read side
+   needs no change when that day comes: classify() already ignores the prefix
+   whenever a column is present. */
+const DUAL_ENCODE = true;
+
 /* Not work — the system talking about itself. These belong in the log, not the
-   manifest, or 16 daily digests bury the one card that needs a decision. */
-const LOG_GLYPHS = { '☀': 'REPORT', '📋': 'TRIAGE', '✅': 'ALERT', '✔': 'DONE' };
+   manifest, or 16 daily digests bury the one card that needs a decision.
+   🚨 was missing here and is in no STATE either, so the five "Sleeper Service is
+   DOWN" cards matched nothing and were filtered out of BOTH lanes: the one alarm
+   that says the automation stopped was the one thing the console could not show. */
+const LOG_GLYPHS = { '☀': 'REPORT', '📋': 'TRIAGE', '✅': 'ALERT', '✔': 'DONE', '🚨': 'ALARM' };
 
 const PRIORITIES = [ { v: 5, label: 'FIRST · 5' }, { v: 3, label: 'MID · 3' }, { v: 1, label: 'LAST · 1' }, { v: 0, label: 'NONE' } ];
 
@@ -94,23 +138,72 @@ async function writeField(id, fields) {
 
 /* ───────────────────────────── parsing ───────────────────────────── */
 
+/* These prefixes are written inconsistently: ☀️ and ✔️ carry a trailing U+FE0F
+   variation selector, 👀 ⛔ 📋 🚨 do not. Slicing one code point off the front
+   therefore leaves a stray U+FE0F behind on 30 of the live cards, and .trim()
+   does not remove it — U+FE0F is a nonspacing mark, not whitespace. So it rode
+   into every title the console printed and into every title it rewrote. */
+const VS16 = '\uFE0F';   // spelled as an escape; the literal character is invisible
+
 function firstGlyph(title) {
   const c = Array.from((title || '').trim())[0] || '';
   return c;
 }
 
+/* -> { glyph, rest }: the leading code point, and everything after it with any
+   variation selector and surrounding whitespace stripped. */
+function splitGlyph(title) {
+  const t = (title || '').trim();
+  let rest = Array.from(t).slice(1).join('');
+  if (rest.startsWith(VS16)) rest = rest.slice(VS16.length);
+  return { glyph: firstGlyph(t), rest: rest.trim() };
+}
+
 function classify(t) {
   const title = (t.title || '').trim();
-  const g = firstGlyph(title);
-  const st = STATES.find(s => s.glyph === g);
-  const logKind = LOG_GLYPHS[g];
-  const rest = st || logKind ? Array.from(title).slice(1).join('').trim() : title;
+  const { glyph: g, rest: afterGlyph } = splitGlyph(title);
+  const glyphState = STATES.find(s => s.glyph === g) || null;
+  const glyphLog = LOG_GLYPHS[g] || null;
+
+  /* COLUMN FIRST — the column is the state. The prefix is the legacy mirror and
+     only gets a vote when there is no column to ask. Three distinct cases:
+       · a state column        -> that state, whatever the prefix claims
+       · the Done column       -> finished work; belongs in the log, not the
+                                  manifest, or the board never appears to drain
+       · UNFILED_COL, or no columnId at all -> fall back to the prefix
+     Unfiled and absent are NOT interchangeable. "Not Sectioned" is a real column
+     a card can be dragged into; absent means never filed, which is every one of
+     the run-output cards the workers post. The trap is treating "has a columnId"
+     as "is filed" — that maps a Not-Sectioned card to no state AND skips the
+     prefix fallback, and a real work card silently vanishes off the console. */
+  const col = t.columnId || '';
+  const stateKey = COL_STATE[col] || null;
+  const inDone = col === COLUMNS.done;
+  const columnSpoke = Boolean(stateKey) || inDone;
+
+  const st = stateKey ? STATES.find(s => s.key === stateKey)
+           : columnSpoke ? null
+           : glyphState;
+  /* A Done card is finished work rather than a run report, but it shares the log
+     lane, so it carries a logKind instead of a state. */
+  const logKind = inDone ? (glyphLog || 'DONE')
+                : st ? null
+                : columnSpoke ? null
+                : glyphLog;
+
+  /* Strip the prefix only when the leading code point is a glyph we recognise —
+     that is what makes it a prefix rather than the first letter of the title. */
+  const rest = (glyphState || glyphLog) ? afterGlyph : title;
   const kindMatch = rest.match(/^\[([a-z]+)\]/i);
   const created = t.createdTime ? new Date(t.createdTime) : null;
   const modified = t.modifiedTime ? new Date(t.modifiedTime) : created;
   const content = t.content || '';
   return {
-    raw: t, id: t.id, title, glyph: g,
+    raw: t, id: t.id, title,
+    /* Show the glyph for the lane the card is actually rendered in. While the
+       board stays dual-encoded these are the same character anyway; if a column
+       and a prefix ever disagree, the row still reads consistently. */
+    glyph: st ? st.glyph : g,
     state: st ? st.key : null,
     stateDef: st || null,
     logKind: logKind || null,
@@ -430,15 +523,14 @@ function toast(msg, kind) {
 
 /* ───────────────────────────── writes ───────────────────────────── */
 
-/* State lives in the title prefix, so a state change is a title rewrite. Strip
-   whatever prefix is there, put the new one on — never blind-prepend, or a card
-   ends up "👀 ⬜ [build] …". */
+/* The legacy prefix half of the dual encoding. Strip whatever prefix is there,
+   put the new one on — never blind-prepend, or a card ends up "👀 ⬜ [build] …".
+   splitGlyph eats the variation selector too; without that, restating ☀️ as ⬜
+   produced "⬜ ️ Workday report" with an orphaned U+FE0F wedged in the middle. */
 function retitle(title, glyph) {
-  const chars = Array.from(title.trim());
-  const known = STATES.map(s => s.glyph).concat(Object.keys(LOG_GLYPHS));
-  let rest = title.trim();
-  if (known.includes(chars[0])) rest = chars.slice(1).join('').trim();
-  return glyph + ' ' + rest;
+  const { glyph: g, rest } = splitGlyph(title);
+  const known = STATES.some(s => s.glyph === g) || Object.hasOwn(LOG_GLYPHS, g);
+  return glyph + ' ' + (known ? rest : (title || '').trim());
 }
 
 async function guarded(fn, statusSel) {
@@ -456,14 +548,27 @@ async function guarded(fn, statusSel) {
   }
 }
 
+/* Column and prefix go out in ONE partial POST, so they land together or fail
+   together and cannot end up disagreeing. Two sequential writes could half-apply
+   and leave exactly the desync this replaces.
+
+   writeField() then re-reads and strict-compares every field it sent, which
+   quietly turns each state tap into a live probe of the columnId write path: if
+   TickTick ever starts dropping columnId the way it drops tags, this raises a
+   red "Write did not stick" on screen instead of silently rotting the board. */
 async function setState(c, key) {
   const s = STATES.find(x => x.key === key);
   if (!s || key === c.state) return;
-  const fresh = await getTask(c.id).catch(() => c.raw);
-  const title = retitle(fresh.title || c.title, s.glyph);
+  const fields = { columnId: s.col };
+  if (DUAL_ENCODE) {
+    /* Re-read first: the title being restated may have changed under us. */
+    const fresh = await getTask(c.id).catch(() => c.raw);
+    fields.title = retitle(fresh.title || c.title, s.glyph);
+  }
   await guarded(async () => {
-    await writeField(c.id, { title });
-    return `State → ${s.glyph} ${s.label}, confirmed on read-back.`;
+    await writeField(c.id, fields);
+    return `State → ${s.glyph} ${s.label}, ` +
+           `${DUAL_ENCODE ? 'column and prefix both' : 'column'} confirmed on read-back.`;
   }, '#dStatus');
   if (app.open) openCard(c.id);
 }
@@ -526,18 +631,27 @@ async function completeCard(c) {
 async function createCard() {
   const title = $('#nTitle').value.trim();
   if (!title) { status('#nStatus', 'A card needs a title.', 'err'); return; }
-  const glyph = STATES.find(s => s.key === app.newState).glyph;
+  const s = STATES.find(x => x.key === app.newState);
+  /* Everything that carries state, in one object, so the same values are asked
+     for and checked. A new card unfiled into no column would land nowhere on the
+     kanban and, once DUAL_ENCODE goes false, nowhere in this console either. */
+  const want = {
+    columnId: s.col,
+    title: DUAL_ENCODE ? retitle(title, s.glyph) : title,
+    priority: app.newPri,
+  };
   try {
     status('#nStatus', 'Creating…', 'busy');
     const made = await call('POST', '/task', {
       projectId: QUEUE_ID,
-      title: retitle(title, glyph),
       content: $('#nBody').value,
-      priority: app.newPri,
+      ...want,
     });
     if (!made || !made.id) throw new Error('No card id came back — nothing was created.');
-    await getTask(made.id);           // read back through a fresh GET
-    toast('Card created.', 'ok');
+    /* This used to GET the card and throw the response away, which proved only
+       that an id resolved — not that the card landed where it was sent. */
+    await verify(made.id, want);
+    toast(`Card created in ${s.label}, confirmed on read-back.`, 'ok');
     status('#nStatus', null);
     $('#newCard').hidden = true;
     $('#nTitle').value = ''; $('#nBody').value = '';
