@@ -119,6 +119,10 @@
       <div class="action-group">
         <span class="action-label">STATE</span>
         <div id="dStateBtns" class="seg"></div>
+        <!-- Run-output cards (reports/triage/alerts) have no workflow state; the
+             state controls are hidden for them and this note shows instead, so a
+             report can never be promoted into the work manifest by a stray tap. -->
+        <p class="hint" id="dStateNote" hidden>Run output &mdash; not a work card. Workflow state applies to manifest cards only.</p>
       </div>
       <div class="action-group">
         <span class="action-label">PICK ORDER</span>

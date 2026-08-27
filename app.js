@@ -400,9 +400,22 @@ function openCard(id) {
   $('#dAppend').value = '';
   $('#dTickTick').href = TT_WEB + c.id;
 
-  segButtons($('#dStateBtns'),
-    STATES.map(s => ({ value: s.key, label: s.glyph + ' ' + s.label, color: s.color })),
-    c.state, v => setState(c, v));
+  /* State controls belong only to work cards. A run-output card (☀️/📋/✅/✔️,
+     classified with state === null) has no workflow state, and offering it the
+     buttons is exactly how a report gets promoted into the work manifest — the
+     detail view opens cards and logs alike, so the guard has to live here. Hide
+     the buttons and show a note for anything with no state. */
+  const isWork = Boolean(c.state);
+  const stateBtns = $('#dStateBtns');
+  stateBtns.hidden = !isWork;
+  $('#dStateNote').hidden = isWork;
+  if (isWork) {
+    segButtons(stateBtns,
+      STATES.map(s => ({ value: s.key, label: s.glyph + ' ' + s.label, color: s.color })),
+      c.state, v => setState(c, v));
+  } else {
+    stateBtns.innerHTML = '';
+  }
 
   segButtons($('#dPriBtns'),
     PRIORITIES.map(p => ({ value: p.v, label: p.label, color: def ? def.color : null })),
@@ -458,7 +471,13 @@ async function guarded(fn, statusSel) {
 
 async function setState(c, key) {
   const s = STATES.find(x => x.key === key);
-  if (!s || key === c.state) return;
+  /* Refuse outright for a card with no workflow state (run output). The old
+     guard only caught `key === c.state`; a log card's state is null, so that
+     comparison was never true and the write went ahead, stamping a work glyph
+     (and, post-columns, a work column) onto a report. The buttons are hidden for
+     these cards now — this is the matching refusal so setState cannot be reached
+     by any other path either. */
+  if (!s || !c.state || key === c.state) return;
   const fresh = await getTask(c.id).catch(() => c.raw);
   const title = retitle(fresh.title || c.title, s.glyph);
   await guarded(async () => {
