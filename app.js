@@ -49,7 +49,7 @@ const app = {
   token: localStorage.getItem(LS.token) || '',
   poll:  +localStorage.getItem(LS.poll) || 60,
   red:   +localStorage.getItem(LS.red)  || 12,
-  tasks: [], cards: [], logs: [],
+  tasks: [], cards: [], logs: [], telemetry: null,
   filter: 'all', open: null,
   timer: null, lastSync: null, inflight: false,
 };
@@ -155,6 +155,10 @@ function rel(d) {
 function render() {
   app.cards = app.tasks.map(classify).filter(c => c.state);
   app.logs  = app.tasks.map(classify).filter(c => c.logKind);
+  /* The heartbeat card wears a glyph in neither STATES nor LOG_GLYPHS, so the two
+     filters above drop it on their own — it can never reach the manifest, the
+     counts, or the ship's log. It is read here and nowhere else. */
+  app.telemetry = parseTelemetry(app.tasks);
   renderCore();
   renderGauges();
   renderSys();
@@ -221,14 +225,100 @@ function renderGauges() {
   });
 }
 
+/* ─────────────────────────── telemetry (the G4 half-close) ───────────────────────────
+
+   Sleeper Service cannot be reached from here — no port, no tunnel, G4 stands. But it
+   can SPEAK, outbound, into the one place both ends already share: a card on this
+   board (SleeperService/heartbeat.py, ~once a minute). So the system panel stops
+   guessing "a run must have happened, there's a report card" and reads the machine's
+   own words instead.
+
+   Freshness comes from the payload's `written` field, NOT the task's modifiedTime:
+   VERIFIED 2026-09-01 that TickTick's Open API does NOT bump modifiedTime on a
+   content-only update — the content changes and modifiedTime stays frozen at
+   creation. Trusting modifiedTime here would peg the age at "hours" forever and
+   report a healthy dispatcher as dead. (A pleasant side effect: the card does not
+   churn in TickTick's own UI, and TRIAGE's modified-since checks ignore it.)
+
+   Silence must read as silence. No card, unparseable card, or a stale one all fall
+   back to the old inferred rows with the panel honestly labelled — never to a
+   cheerful default. That is the failure the System Console had. */
+
+const TELEMETRY_GLYPH = '\u{1F4E1}';
+const TELEM_OK_MS = 3 * 60e3;    // written within 3 min: the writer is alive
+const TELEM_WARN_MS = 15 * 60e3; // the watchdog relaunches within ~5, so 15 is real trouble
+
+function parseTelemetry(tasks) {
+  const t = (tasks || []).find(x => (x.title || '').trim().startsWith(TELEMETRY_GLYPH));
+  if (!t) return null;
+  const m = (t.content || '').match(/```json\s*([\s\S]*?)```/);
+  if (!m) return null;
+  let p;
+  try { p = JSON.parse(m[1]); } catch { return null; }
+  if (!p || typeof p.written_epoch !== 'number') return null;
+  return { id: t.id, payload: p, age: Date.now() - p.written_epoch * 1000 };
+}
+
+/* Next time an armed rule's window opens. Days are the rule's own short names, and
+   the window's left half is the start — same shape presence.py gates on. */
+const DAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+function nextFire(rule, from = new Date()) {
+  const start = (rule.window || '').split('-')[0];
+  const hm = /^(\d{1,2}):(\d{2})$/.exec(start || '');
+  if (!hm || !(rule.days || []).length) return null;
+  for (let i = 0; i < 8; i++) {
+    const d = new Date(from);
+    d.setDate(d.getDate() + i);
+    d.setHours(+hm[1], +hm[2], 0, 0);
+    if (d > from && rule.days.includes(DAYS[d.getDay()])) return d;
+  }
+  return null;
+}
+
 function renderSys() {
-  /* Everything here is derived from cards on the board, because the board is the
-     only part of this system reachable from off-machine (ECOSYSTEM.md G4). The
-     dispatcher's own state.json is a local file this app can never see — so
-     "did a run happen" is inferred from the age of the newest report/triage
-     card, which is exactly check (b) the watchdog uses. Labelled INFERRED for
-     that reason: a health light that lies is worse than no light. */
   const el = $('#sysStrip');
+  const tag = $('#sysTag');
+  const needAnswer = app.cards.filter(c => c.state === 'blocked' && !c.parked).length;
+  const needRow = ['NEEDS YOU', needAnswer ? needAnswer + ' blocked' : 'nothing blocked',
+                   needAnswer ? 'warn' : 'ok'];
+  const syncRow = ['SYNCED', app.lastSync ? rel(app.lastSync) : '—', 'ok'];
+
+  const t = app.telemetry;
+  if (t && t.age < TELEM_WARN_MS) {
+    const p = t.payload;
+    const live = t.age < TELEM_OK_MS;
+    tag.textContent = live ? 'LIVE' : 'LATE';
+    tag.title = live
+      ? 'Read from the dispatcher’s own heartbeat card, written on the machine'
+      : 'The dispatcher’s heartbeat is late — it may have stopped';
+
+    const armed = (p.routines || []).filter(r => r.enabled);
+    const next = armed.map(r => ({ r, at: nextFire(r) })).filter(x => x.at)
+      .sort((a, b) => a.at - b.at)[0];
+    /* Real last-fired from the machine, not "a report card exists, so probably". */
+    const fired = (p.routines || []).map(r => r.last_fired && new Date(r.last_fired))
+      .filter(d => d && !isNaN(d)).sort((a, b) => b - a)[0];
+
+    const idleMin = Math.round((p.idle_seconds || 0) / 60);
+    const where = p.present
+      ? 'at the machine' + (p.presence_source === 'manual' ? ' (manual)' : '')
+      : 'away ' + idleMin + 'm' + (p.presence_source === 'manual' ? ' (manual)' : '');
+
+    el.innerHTML = [
+      ['DISPATCHER', live ? 'UP · heard ' + relMs(t.age) : 'LATE · ' + relMs(t.age),
+       live ? 'ok' : 'warn'],
+      ['CHRIS', where + ' — as this PC sees it', 'ok'],
+      ['LAST RUN', fired ? rel(fired) : 'never', fired && ageMs(fired) > 30 * HOUR ? 'warn' : 'ok'],
+      ['NEXT RUN', next ? next.r.name + ' ' + whenShort(next.at) : 'nothing armed',
+       next ? 'ok' : 'warn'],
+      needRow, syncRow,
+    ].map(([k, v, ok]) =>
+      `<div class="sys-row" data-ok="${ok}"><span>${k}</span><b>${esc(v)}</b></div>`).join('');
+    return;
+  }
+
+  /* No usable telemetry. Fall back to the original board-derived inference, and say
+     so — including WHY, when a heartbeat card exists but has gone quiet. */
   const runs = app.logs
     .filter(c => c.logKind === 'REPORT' || c.logKind === 'TRIAGE')
     .sort((a, b) => (b.created || 0) - (a.created || 0));
@@ -236,16 +326,35 @@ function renderSys() {
   const hrs = last ? ageMs(last.created) / HOUR : Infinity;
   const runOk = hrs > 30 ? 'bad' : hrs > 18 ? 'warn' : 'ok';
 
-  const needAnswer = app.cards.filter(c => c.state === 'blocked' && !c.parked).length;
+  tag.textContent = t ? 'NO SIGNAL' : 'INFERRED';
+  tag.title = t
+    ? 'The dispatcher stopped writing its heartbeat — these rows are guesses from the board'
+    : 'Derived from cards on the board, not from the machine';
 
-  const rows = [
+  const rows = [];
+  if (t) rows.push(['DISPATCHER', 'SILENT ' + relMs(t.age), 'bad']);
+  rows.push(
     ['LAST RUN', last ? rel(last.created) : 'none on board', runOk],
     ['DISPATCH', hrs > 30 ? 'NO RUN 30h+' : hrs > 18 ? 'QUIET' : 'NOMINAL', runOk],
-    ['NEEDS YOU', needAnswer ? needAnswer + ' blocked' : 'nothing blocked', needAnswer ? 'warn' : 'ok'],
-    ['SYNCED', app.lastSync ? rel(app.lastSync) : '—', 'ok'],
-  ];
+    needRow, syncRow);
   el.innerHTML = rows.map(([k, v, ok]) =>
     `<div class="sys-row" data-ok="${ok}"><span>${k}</span><b>${esc(v)}</b></div>`).join('');
+}
+
+/* Ages here are seconds-to-minutes, where rel()'s "just now" hides exactly the
+   detail that matters — whether the last write was 40s or 4 minutes ago. */
+function relMs(ms) {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 90) return s + 's ago';
+  const m = Math.round(s / 60);
+  return m < 60 ? m + 'm ago' : Math.round(m / 60) + 'h ago';
+}
+
+function whenShort(d) {
+  const p = n => String(n).padStart(2, '0');
+  const days = Math.floor((new Date(d).setHours(0, 0, 0, 0) - new Date().setHours(0, 0, 0, 0)) / 864e5);
+  const when = days === 0 ? 'today' : days === 1 ? 'tomorrow' : DAYS[d.getDay()];
+  return `${when} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
 function renderFilters() {
