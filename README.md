@@ -80,12 +80,16 @@ the wrong kind of quiet. Absent and unfiled are handled as separate cases in `cl
 
 Full control except delete. State, pick order, append-a-note, replace-body, complete, create.
 
-State lives in the **kanban column**. ECOSYSTEM.md F4 — "the Open API can't write tags or
-columns" — is **false for columns**, in both directions. Probed 2026-08-25 against
-`api.ticktick.com/open/v1`, the same surface this app talks to: a partial POST sets `columnId`
-and TickTick resolves `columnName` from it; a partial POST moves a card between columns; and a
-title-only POST leaves an existing `columnId` alone. (F4 may still hold for tags. Nothing here
-sends tags.)
+State lives in the **kanban column**. ECOSYSTEM.md used to carry a fragility, F4, saying
+"the Open API can't write tags or columns". That entry was **deleted on 2026-09-04** because it
+is false in both directions, so do not go looking for it.
+
+For columns, probed 2026-08-25 against `api.ticktick.com/open/v1`, the same surface this app
+talks to: a partial POST sets `columnId` and TickTick resolves `columnName` from it; a partial
+POST moves a card between columns; and a title-only POST leaves an existing `columnId` alone.
+For tags, `automation/ticktick_api.py add_tags()` writes them and reads them back. The original
+claim was true only of the old local stdio MCP wrapper, which returned 200 and silently dropped
+both — a result about one client, written down as a property of the API.
 
 That last result is what made the old prefix-only design worse than it looked. Rewriting just
 the title never *ejected* a card from its column — it left the column **stale**, so the board's
