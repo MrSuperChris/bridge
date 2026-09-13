@@ -497,6 +497,13 @@ function rowFor(c) {
   if (c.kind) bits.push(`<span class="kind">${esc(c.kind.toUpperCase())}</span>`);
   bits.push(esc(rel(c.created)));
   if (c.parked) bits.push('PARKED');
+  /* The verb alone, so a lane can be triaged without opening anything. "nothing"
+     is styled quiet rather than loud: the whole value is that those cards stop
+     competing for attention with the ones that actually want something. */
+  const need = needsBand(c.content);
+  if (need && need.verb) {
+    bits.push(`<span class="needs-chip" data-verb="${need.verb}">${esc(need.verb)}</span>`);
+  }
   const pri = PRIORITIES.find(p => p.v === c.priority);
 
   b.innerHTML =
@@ -558,6 +565,20 @@ function esc(s) {
    Repo:/Source: lines, absolute Windows paths, URLs. Rendering those as
    structure is the difference between a wall of text and something readable on
    a phone at 6am. */
+/* The last `--- NEEDS: <verb> — <ask> ---` band in a card body, or null.
+   LAST one wins, matching the worker rule and TRIAGE 7b's positional convention:
+   runs append a fresh band rather than editing the old one, so the newest is the
+   current ask and everything above it is history. Returns the verb separately
+   because the list row shows only that — the whole point is that a card needing
+   nothing can be recognised without opening it. */
+function needsBand(text) {
+  const all = [...(text || '').matchAll(/^---\s*NEEDS:\s*(.+?)\s*---\s*$/gm)];
+  if (!all.length) return null;
+  const ask = all[all.length - 1][1].trim();
+  const verb = (ask.match(/^(approve|answer|nothing)\b/i) || [])[1];
+  return { ask, verb: verb ? verb.toLowerCase() : null };
+}
+
 function renderBody(text) {
   let h = esc(text || '(no body)');
   h = h.replace(/^---\s*(.+?)\s*---\s*$/gm, (_, t) => `<span class="sec">${t}</span>`);
@@ -597,6 +618,16 @@ function openCard(id) {
   dPri.style.setProperty('--c', def ? def.color : 'var(--log)');
   $('#dAge').textContent = 'created ' + rel(c.created) + ' · changed ' + rel(c.modified);
   $('#dTitle').textContent = c.clean || c.title;
+  /* Hoist the ask to the top. It stays in the body too — the body is the source
+     of truth several consumers read, and stripping it there would break them. */
+  const needs = needsBand(c.content);
+  const dNeeds = $('#dNeeds');
+  dNeeds.hidden = !needs;
+  if (needs) {
+    dNeeds.dataset.verb = needs.verb || 'other';
+    dNeeds.innerHTML = `<span class="needs-verb">${esc(needs.verb || 'needs')}</span>` +
+                       `<span class="needs-ask">${esc(needs.ask)}</span>`;
+  }
   $('#dBody').innerHTML = renderBody(c.content);
   $('#dEdit').value = c.content || '';
   $('#dAppend').value = '';
