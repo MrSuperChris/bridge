@@ -535,6 +535,8 @@ textarea:focus, input:focus { outline: none; border-color: rgba(36,214,240,.55);
    answer want you, nothing does not. */
 .detail-needs[data-verb="approve"] { --c: var(--review); }
 .detail-needs[data-verb="answer"]  { --c: var(--blocked, #e0575f); }
+/* tick: finished, but it still wants a gesture — so it reads as live, not as done. */
+.detail-needs[data-verb="tick"]    { --c: var(--ok, #37ba7b); }
 .detail-needs[data-verb="nothing"] { --c: var(--ink-faint); }
 .detail-needs[data-verb="nothing"] .needs-ask { color: var(--ink-faint); }
 
@@ -544,5 +546,6 @@ textarea:focus, input:focus { outline: none; border-color: rgba(36,214,240,.55);
 }
 .needs-chip[data-verb="approve"] { color: var(--review); }
 .needs-chip[data-verb="answer"]  { color: var(--blocked, #e0575f); }
+.needs-chip[data-verb="tick"]    { color: var(--ok, #37ba7b); }
 /* No border and faded: a card needing nothing should read as already handled. */
 .needs-chip[data-verb="nothing"] { color: var(--ink-faint); border-color: transparent; opacity: .65; }

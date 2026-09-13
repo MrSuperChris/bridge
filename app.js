@@ -609,7 +609,10 @@ function needsBand(text) {
   const all = [...(text || '').matchAll(/^---\s*NEEDS:\s*(.+?)\s*---\s*$/gm)];
   if (!all.length) return null;
   const ask = all[all.length - 1][1].trim();
-  const verb = (ask.match(/^(approve|answer|nothing)\b/i) || [])[1];
+  /* tick is its own verb, not a flavour of nothing: completing a card is Chris's
+     act alone, so finished work still needs one gesture from him. Calling that
+     'nothing' once made the board announce "28 to review, 25 need nothing". */
+  const verb = (ask.match(/^(approve|answer|tick|nothing)\b/i) || [])[1];
   return { ask, verb: verb ? verb.toLowerCase() : null };
 }
 
