@@ -50,6 +50,7 @@ const COLUMNS = {
   review:  '6a8e3dc68f0800ee150f8fe1',   // "Needs Review"
   blocked: '6a8e3dc88f08b397ec1c1f09',   // "Blocked"
   done:    '6a8e3dca8f0800ee150f902a',   // "Done"
+  hold:    '6aa609568f084b1907fe4872',   // "Hold" — parked by Chris, not lost, not nagging
 };
 /* TickTick's own default bucket. A card here is UNFILED — it has a column but
    that column carries no state. NOT the same as a card with no columnId at all
@@ -179,14 +180,47 @@ function classify(t) {
   const col = t.columnId || '';
   const stateKey = COL_STATE[col] || null;
   const inDone = col === COLUMNS.done;
-  const columnSpoke = Boolean(stateKey) || inDone;
+  /* Hold is work Chris has consciously parked — real, his to act on, not now. It
+     shares the log lane with Done for the same reason Done does: it must stay
+     READABLE without joining the manifest, the gauges or the "waiting on you"
+     counts, because a parked card that still nags is the thing Hold exists to fix.
+     It is NOT in STATES on purpose. Every STATES entry gets a pressure gauge, and
+     a gauge needs a cap; a cap of 0 makes `n > cap` true the moment a single card
+     is parked, so Hold would sit permanently redlined — the exact opposite of a
+     quiet lane. Handling it here costs one branch and gets it right.
+     WITHOUT this, a Hold card matches no state and no log glyph, so BOTH filters
+     in render() drop it and the card disappears from the console altogether. That
+     is not a cosmetic bug: it is the graveyard, arrived on day one. */
+  const inHold = col === COLUMNS.hold;
+  const columnSpoke = Boolean(stateKey) || inDone || inHold;
 
   const st = stateKey ? STATES.find(s => s.key === stateKey)
            : columnSpoke ? null
            : glyphState;
   /* A Done card is finished work rather than a run report, but it shares the log
      lane, so it carries a logKind instead of a state. */
+  /* A card in a column this build has never heard of used to match no state and no
+     log glyph, so both filters in render() dropped it and it vanished from the
+     console. Verified 2026-09-12 against a synthetic card. That is how adding the
+     Hold column would have silently hidden six real cards, and it would happen
+     again for the next column anyone creates. An unknown FILED column now falls
+     into the log lane rather than off the board: worse placement is recoverable,
+     invisibility is not. Not Sectioned is excluded because it is genuinely
+     "unfiled" and already has its own prefix fallback above. */
+  const inUnknownCol = Boolean(col) && !stateKey && !inDone && !inHold
+                       && col !== UNFILED_COL;
+  /* Not Sectioned falls back to the prefix — which worked until the prefixes were
+     stripped from every work card on 2026-09-05. A work card dragged there now
+     carries no glyph, matches nothing, and disappears. Three real cards were in
+     exactly that state when this was written, two of them genuine captures.
+     Deliberately narrow: it fires only for Not Sectioned with no recognised
+     glyph. The telemetry card (📡, no column at all) is meant to match nothing
+     and stay out of both lanes, and that is left intact. */
+  const unfiledNoGlyph = col === UNFILED_COL && !glyphState && !glyphLog;
   const logKind = inDone ? (glyphLog || 'DONE')
+                : inHold ? 'HOLD'
+                : inUnknownCol ? 'FILED'
+                : unfiledNoGlyph ? 'UNFILED'
                 : st ? null
                 : columnSpoke ? null
                 : glyphLog;
