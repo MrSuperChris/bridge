@@ -119,6 +119,13 @@
     <div id="dBody" class="detail-body"></div>
 
     <div class="detail-actions">
+      <!-- Shown only when the card's live NEEDS band names repo + branch + commit.
+           No sha means no button: approval binds to a commit, not a branch name. -->
+      <div class="action-group" id="dMergeGroup" hidden>
+        <span class="action-label">MERGE</span>
+        <button id="dApproveMerge" class="btn btn-primary">APPROVE MERGE</button>
+        <p class="hint" id="dMergeHint"></p>
+      </div>
       <div class="action-group">
         <span class="action-label">STATE</span>
         <div id="dStateBtns" class="seg"></div>

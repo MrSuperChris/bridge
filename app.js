@@ -688,6 +688,17 @@ function openCard(id) {
     PRIORITIES.map(p => ({ value: p.v, label: p.label, color: def ? def.color : null })),
     c.priority, v => setPriority(c, v));
 
+  /* Offer the merge approval only when the card's own ask can be acted on. */
+  const merge = mergeAsk(c.content);
+  $('#dMergeGroup').hidden = !merge;
+  if (merge) {
+    const live = !INERT_ON_MERGE.includes(merge.repo);
+    $('#dMergeHint').textContent =
+      `${merge.branch} → ${merge.repo} @ ${merge.sha}. Merged by the next run`
+      + (live ? ', and this repo goes live on merge.' : '.');
+    $('#dApproveMerge').onclick = () => approveMerge(c, merge);
+  }
+
   $('#dAppendBtn').onclick = () => appendNote(c);
   $('#dEditBtn').onclick   = () => saveBody(c);
   $('#dComplete').onclick  = () => completeCard(c);
@@ -786,6 +797,78 @@ async function setPriority(c, v) {
 
 /* Read-then-append. The card body is shared memory between Chris and every
    worker run; overwriting it loses the OUTCOME trail. */
+/* ── Approve a merge from the card ────────────────────────────────────────────
+   Chris taps approve here; automation/merge_approved.py performs that one merge
+   on the next run and reports back. HE still makes the decision, per card, per
+   commit — this only removes the trip to the desktop, which is the actual reason
+   seven finished branches sat unmerged for up to two months.
+
+   The button appears ONLY when the card's live NEEDS band names all three of
+   repo, branch and commit. No sha, no button: approval binds to a commit, never
+   to a branch name, or "approve" silently authorises whatever the branch happens
+   to hold later. The executor enforces the same rule and refuses a moved tip;
+   this just declines to offer a gesture that would be refused. */
+const MERGE_REPOS = ['automation', 'bridge', 'voice-tasker', 'habitica-notes', 'iching',
+                     'tachometer', 'journal', 'cloudding', 'uplift-project-handoff',
+                     'RouteKeeper', 'primer', 'decisions', 'narrator', 'minecraft'];
+
+/* Merging is LIVE for most of these, so the warning defaults to on and only a
+   known-inert repo turns it off. tiers.json is the authority; this is a UI hint
+   and is deliberately fail-loud — if the two ever drift, this over-warns rather
+   than under-warns. */
+const INERT_ON_MERGE = ['habitica-notes', 'cloudding'];
+
+function mergeAsk(content) {
+  const bands = [...(content || '').matchAll(/^---\s*NEEDS:\s*(.+?)\s*---\s*$/gm)];
+  if (!bands.length) return null;
+  const ask = bands[bands.length - 1][1];
+  if (!/^approve\b/i.test(ask.trim()) || !/merge/i.test(ask)) return null;
+  const branch = (ask.match(/\bclaude\/[A-Za-z0-9._\/-]+/) || [])[0];
+  const sha = (ask.match(/\b(?:commit\s+)([0-9a-f]{7,40})\b/i) || [])[1];
+  /* Two backslashes, not one: inside a JS STRING literal \b is a BACKSPACE
+     character, not a word boundary, so this never matched and the button never
+     appeared. The identical trap cost a Python regex earlier the same night. */
+  const repo = MERGE_REPOS.find(r => new RegExp('\\b' + r + '\\b').test(ask));
+  if (!branch || !sha || !repo) return null;
+  return { repo, branch: branch.replace(/[.,)]+$/, ''), sha, ask };
+}
+
+async function approveMerge(c, m) {
+  const live = !INERT_ON_MERGE.includes(m.repo);
+  const warn = live
+    ? `
+
+This repo goes LIVE on merge — the change is running within minutes, unattended.`
+    : '';
+  if (!confirm(`Approve merging
+
+  ${m.branch}
+  into ${m.repo}
+  at commit ${m.sha}
+
+`
+             + `The next run performs it and reports back. Nothing happens right now.`
+             + `${warn}
+
+Approve?`)) return;
+
+  const ok = await guarded(async () => {
+    const fresh = await getTask(c.id);
+    /* Appended BELOW the last NEEDS band on purpose: that ordering is what the
+       executor reads as "Chris wrote this after the run did". */
+    const block = `
+
+--- CHRIS ${localStamp()} (via Bridge) ---
+`
+                + `Approved for merge.
+`
+                + `--- APPROVED-MERGE: ${m.repo} ${m.branch} ${m.sha} ---`;
+    await writeField(c.id, { content: (fresh.content || '') + block });
+    return `Approved — ${m.branch} merges on the next run.`;
+  }, '#dStatus');
+  if (ok && app.open) openCard(c.id);
+}
+
 async function appendNote(c) {
   const text = $('#dAppend').value.trim();
   if (!text) { status('#dStatus', 'Nothing to append.', 'err'); return; }
