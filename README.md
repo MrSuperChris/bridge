@@ -148,10 +148,21 @@ token so you skip the setup screen; `python dev-token.py --clean` removes it.
 Live at **https://mrsuperchris.github.io/bridge/**
 
 On iPad, open it in **Safari** (not Chrome — Add to Home Screen is a Safari feature on iPadOS),
-then Share → Add to Home Screen. Same on Android via Chrome → ⋮ → Add to Home screen. It runs
-standalone with its own icon.
+then Share → Add to Home Screen.
 
-Paste the token once per device. Get it with:
+On Android, open it in Chrome, then ⋮ → **"Install and create shortcut"**, and choose **Install**
+when offered. Chrome renamed this menu item; it used to read "Add to Home screen", which is what
+this README said until 2026-09-12, and the old wording sent Chris hunting for an option that no
+longer exists. Take Install rather than a plain shortcut — the manifest declares
+`"display": "standalone"`, so installing gives a real app window, while a shortcut is just a
+bookmark that opens a Chrome tab.
+
+Either way it runs standalone with its own icon.
+
+Paste the token once per device — but do not type it by hand. `python qr-setup.py` renders a QR
+that carries the token in the URL fragment; scan it with the device camera and Bridge configures
+itself. Run `python qr-setup.py --clean` afterwards, because the generated PNG contains a live
+credential. If you do need the raw token:
 
 ```powershell
 (Get-Content C:/Users/Chris/claude/SleeperService/config.json -Raw | ConvertFrom-Json).ticktick_token
