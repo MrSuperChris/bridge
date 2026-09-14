@@ -51,6 +51,23 @@
       <div id="linkState" class="link-state" title="connection">
         <span class="link-dot"></span><span id="linkLabel">LINK</span>
       </div>
+      <!-- Open Babel (the voice-capture app) — a "go capture something" affordance, not
+           an action on the current card, so it sits first in the button cluster and gets
+           its own accent. Opens in a new tab on purpose: that leaves Bridge's console
+           running to return to, rather than navigating this PWA out to another scope.
+           URL hardcoded because Bridge is a static page with no server and must not read
+           config.json; the canonical value lives there as `babel_url`. -->
+      <a id="btnBabel" class="icon-btn babel-link"
+         href="https://mrsuperchris.github.io/voice-tasker/"
+         target="_blank" rel="noopener"
+         title="Open Babel — capture something" aria-label="Open Babel">
+        <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="9" y="2.5" width="6" height="11" rx="3"></rect>
+          <path d="M5 11a7 7 0 0 0 14 0"></path>
+          <line x1="12" y1="18" x2="12" y2="21.5"></line>
+        </svg>
+      </a>
       <button id="btnRefresh" class="icon-btn" title="Refresh now" aria-label="Refresh">&#x21bb;</button>
       <button id="btnNew" class="icon-btn" title="New card" aria-label="New card">&#xff0b;</button>
       <button id="btnSettings" class="icon-btn" title="Settings" aria-label="Settings">&#x2699;</button>
