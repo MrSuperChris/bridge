@@ -831,7 +831,16 @@ function mergeAsk(content) {
   /* Two backslashes, not one: inside a JS STRING literal \b is a BACKSPACE
      character, not a word boundary, so this never matched and the button never
      appeared. The identical trap cost a Python regex earlier the same night. */
-  const repo = MERGE_REPOS.find(r => new RegExp('\\b' + r + '\\b').test(ask));
+  /* Look for the repo only AFTER removing the branch name. A plain word-boundary search
+     found 'bridge' inside 'claude/open-bridge-button' — a hyphen counts as a boundary —
+     and since 'bridge' is listed before 'voice-tasker', it won. The approval for a
+     voice-tasker branch was written against bridge, and the executor refused it (safely:
+     that branch does not exist in bridge). Prefer the explicit 'in <repo>' phrasing the
+     runs use; fall back to a search of the ask with the branch cut out. */
+  const rest = ask.replace(/claude\/[A-Za-z0-9._\/-]+/g, ' ');
+  const explicit = (rest.match(/\bin\s+([A-Za-z0-9._-]+)/i) || [])[1];
+  const repo = MERGE_REPOS.find(r => explicit && r.toLowerCase() === explicit.toLowerCase())
+            || MERGE_REPOS.find(r => new RegExp('(^|[^A-Za-z0-9_-])' + r + '($|[^A-Za-z0-9_-])').test(rest));
   if (!branch || !sha || !repo) return null;
   return { repo, branch: branch.replace(/[.,)]+$/, ''), sha, ask };
 }
