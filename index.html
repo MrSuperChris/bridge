@@ -75,6 +75,22 @@
     <div class="sweep"><div id="sweepBar" class="sweep-bar"></div></div>
   </header>
 
+  <!-- ══════════════════ NEEDS YOU (design part C) ══════════════════
+       A daily "what needs me" list, above the console. First the machine's own
+       health verdict, read from the watchdog's status card (design part A); then
+       one line per open card whose LATEST NEEDS band asks Chris for something —
+       merges to approve, questions to answer, tick-offs. Cards saying "nothing"
+       or "stopped", and parked cards, are left out. The console stays below,
+       unchanged. Item 1 stays quiet until part A's status card is live. -->
+  <section id="needsYou" class="needs-you" hidden>
+    <div class="ny-head">
+      <span class="panel-title">NEEDS YOU</span>
+      <span id="nyCount" class="panel-tag">&mdash;</span>
+    </div>
+    <div id="nyHealth" class="ny-health" hidden></div>
+    <div id="nyList" class="ny-list"></div>
+  </section>
+
   <div class="grid">
 
     <section class="panel core-panel" id="corePanel">

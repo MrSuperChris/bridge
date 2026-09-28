@@ -286,6 +286,7 @@ function render() {
      filters above drop it on their own — it can never reach the manifest, the
      counts, or the ship's log. It is read here and nowhere else. */
   app.telemetry = parseTelemetry(app.tasks);
+  renderNeedsYou();
   renderCore();
   renderGauges();
   renderSys();
@@ -349,6 +350,103 @@ function renderGauges() {
       `<div class="gauge-note">${over ? 'OVER' : 'OF'} ${cap}${over ? ' — BACK-PRESSURE' : ''}</div>`;
     d.onclick = () => { app.filter = app.filter === s.key ? 'all' : s.key; renderFilters(); renderList(); };
     el.appendChild(d);
+  });
+}
+
+/* ─────────────────────────── "Needs you" (design part C) ───────────────────────────
+
+   A daily "what needs me" list at the very top: the machine's own health verdict
+   first, then one row per open card whose LATEST NEEDS band asks Chris for something.
+
+   Item 1 reads part A's status card (automation/watchdog/watchdog.py) — a single
+   card titled "🩺 System status", updated in place, whose first line is the verdict
+   ("OK: …" / "PROBLEM …: …") and whose last data line is "updated <local time>".
+   That stamp doubles as a dead-man's switch: stale means the machine itself is off.
+   The card does not exist until part A merges, so its ABSENCE is a quiet neutral,
+   never an alarm — the one thing this whole design exists to avoid is a false one.
+
+   Item 2 is built from the four STATE columns only (app.cards). Hold and Done are
+   Chris's own lanes — a parked card must not nag and a card he filed into Done is
+   his call — so neither surfaces here, which app.cards already gives us for free. */
+
+const STATUS_TITLE = '\u{1FA7A} System status';   // part A's watchdog status card
+const STATUS_STALE_MS = 15 * 60e3;                // "updated" older than this ⇒ offline
+
+/* Parse the status card if it is on the board. The "updated" stamp is written in the
+   machine's LOCAL time with no zone (watchdog.py fmt_local: "YYYY-MM-DD HH:MM"), so it
+   is read back as local time here — correct on Chris's own devices, which share that
+   zone. Parsed by hand, not with new Date(): a space-separated stamp is not ISO and
+   Safari (the iPad) returns Invalid Date for it. */
+function parseStatus(tasks) {
+  const t = (tasks || []).find(x => (x.title || '').trim().startsWith(STATUS_TITLE));
+  if (!t) return null;
+  const content = t.content || '';
+  const first = (content.split('\n').find(l => l.trim()) || '').trim();
+  const level = /^PROBLEM/i.test(first) ? 'problem' : /^OK/i.test(first) ? 'ok' : 'unknown';
+  const needsChris = /NEEDS CHRIS/i.test(content);
+  const fix = (content.match(/^\s*Fix:\s*(.+?)\s*$/mi) || [])[1] || null;
+  const um = content.match(/^\s*updated\s+(\d{4})-(\d{2})-(\d{2})\s+(\d{1,2}):(\d{2})/mi);
+  const updated = um ? new Date(+um[1], +um[2] - 1, +um[3], +um[4], +um[5]) : null;
+  return { id: t.id, verdict: first, level, needsChris, fix, updated };
+}
+
+/* answer (a question, blocking) reads loudest, then approve (a merge), then tick
+   (finished — one gesture and it is gone). Same colour language as the NEEDS band. */
+const NEEDY_VERBS = { answer: 0, approve: 1, tick: 2 };
+
+function renderNeedsYou() {
+  $('#needsYou').hidden = false;
+
+  /* ── health verdict, from part A's status card ── */
+  const hEl = $('#nyHealth');
+  const st = parseStatus(app.tasks);
+  if (!st) {
+    /* No status card yet (part A not merged). Say so quietly; never alarm. */
+    hEl.hidden = false;
+    hEl.dataset.level = 'none';
+    hEl.innerHTML = `<span class="ny-h-label">MACHINE</span>` +
+                    `<span class="ny-h-text">status not reported yet</span>`;
+  } else {
+    const stale = st.updated && (Date.now() - st.updated.getTime()) > STATUS_STALE_MS;
+    const level = stale ? 'offline'
+                : st.level === 'problem' ? (st.needsChris ? 'needs' : 'problem')
+                : st.level === 'ok' ? 'ok' : 'none';
+    const text = stale ? 'machine offline — last heard ' + rel(st.updated)
+               : st.verdict + (st.level === 'problem' && st.fix ? ' — Fix: ' + st.fix : '');
+    hEl.hidden = false;
+    hEl.dataset.level = level;
+    hEl.innerHTML = `<span class="ny-h-label">MACHINE</span>` +
+                    `<span class="ny-h-text">${esc(text)}</span>` +
+                    (st.updated && !stale ? `<span class="ny-h-age">${esc(rel(st.updated))}</span>` : '');
+  }
+
+  /* ── one row per card whose latest NEEDS band asks for something ── */
+  const needy = app.cards
+    .filter(c => !c.parked)
+    .map(c => ({ c, nb: needsBand(c.content) }))
+    .filter(x => x.nb && x.nb.verb && x.nb.verb in NEEDY_VERBS)
+    .sort((a, b) => {
+      const w = NEEDY_VERBS[a.nb.verb] - NEEDY_VERBS[b.nb.verb];
+      return w !== 0 ? w : sortCards(a.c, b.c);
+    });
+
+  $('#nyCount').textContent = needy.length ? needy.length + ' WAITING' : 'CLEAR';
+  const lEl = $('#nyList');
+  lEl.innerHTML = '';
+  if (!needy.length) {
+    lEl.innerHTML = `<p class="ny-empty">Nothing on the board is waiting on you.</p>`;
+    return;
+  }
+  needy.forEach(({ c, nb }) => {
+    const b = document.createElement('button');
+    b.className = 'ny-row';
+    b.dataset.verb = nb.verb;
+    b.innerHTML =
+      `<span class="needs-chip" data-verb="${nb.verb}">${esc(nb.verb)}</span>` +
+      `<span class="ny-row-title">${esc(c.clean || c.title)}</span>` +
+      `<span class="ny-row-ask">${esc(nb.ask)}</span>`;
+    b.onclick = () => openCard(c.id);
+    lEl.appendChild(b);
   });
 }
 

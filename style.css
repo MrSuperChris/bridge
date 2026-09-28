@@ -555,3 +555,65 @@ textarea:focus, input:focus { outline: none; border-color: rgba(36,214,240,.55);
 .needs-chip[data-verb="tick"]    { color: var(--ok, #37ba7b); }
 /* No border and faded: a card needing nothing should read as already handled. */
 .needs-chip[data-verb="nothing"] { color: var(--ink-faint); border-color: transparent; opacity: .65; }
+
+/* ── NEEDS YOU (design part C) ─────────────────────────────────────────────────
+   The daily "what needs me" list, above the console: machine health first, then
+   one row per card whose latest NEEDS band asks Chris for something. Aligned to
+   the same width and gutters as the grid below it. */
+.needs-you {
+  max-width: 1680px; margin: 0 auto;
+  padding: 16px 14px 2px;
+}
+@media (min-width: 760px) { .needs-you { padding-left: 18px; padding-right: 18px; } }
+
+.ny-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
+.ny-head .panel-title {
+  font: 600 10px/1 var(--mono); letter-spacing: .28em; color: var(--ink-dim);
+}
+.ny-head .panel-tag {
+  font: 600 9px/1 var(--mono); letter-spacing: .18em; color: var(--ink-faint);
+}
+
+.ny-health {
+  display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
+  padding: 12px 14px; margin-bottom: 12px;
+  border: 1px solid var(--hair); border-left: 3px solid var(--c, var(--ink-faint));
+  border-radius: 10px; background: rgba(255, 255, 255, .022);
+}
+.ny-health[data-level="ok"]      { --c: var(--ok, #37ba7b); }
+.ny-health[data-level="problem"] { --c: var(--review); }
+.ny-health[data-level="needs"]   { --c: var(--blocked); }
+.ny-health[data-level="offline"] { --c: var(--blocked); }
+.ny-health[data-level="none"]    { --c: var(--ink-faint); }
+.ny-h-label {
+  font: 600 10px/1 var(--mono); letter-spacing: .2em; text-transform: uppercase;
+  color: var(--c, var(--ink-faint)); flex: 0 0 auto;
+}
+.ny-h-text { font: 500 13.5px/1.5 var(--sans); color: var(--ink); flex: 1 1 12ch; }
+.ny-health[data-level="none"] .ny-h-text { color: var(--ink-faint); }
+.ny-h-age {
+  font: 500 10px/1 var(--mono); letter-spacing: .1em; color: var(--ink-faint);
+  margin-left: auto; flex: 0 0 auto;
+}
+
+.ny-list { display: flex; flex-direction: column; gap: 8px; }
+.ny-row {
+  display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+  width: 100%; text-align: left; cursor: pointer;
+  padding: 11px 13px;
+  background: var(--panel); color: var(--ink);
+  border: 1px solid var(--hair); border-left: 3px solid var(--c, var(--review));
+  border-radius: 9px;
+  transition: color .15s, border-color .15s, background .15s;
+}
+.ny-row[data-verb="answer"]  { --c: var(--blocked); }
+.ny-row[data-verb="approve"] { --c: var(--review); }
+.ny-row[data-verb="tick"]    { --c: var(--ok, #37ba7b); }
+.ny-row:hover  { border-color: var(--hair-2); background: var(--panel-2); }
+.ny-row:active { transform: translateY(1px); }
+.ny-row-title { font: 600 13.5px/1.35 var(--sans); color: var(--ink); flex: 1 1 16ch; }
+.ny-row-ask   { font: 400 11.5px/1.5 var(--sans); color: var(--ink-faint); flex: 1 1 100%; }
+.ny-empty {
+  font: 500 11px/1.6 var(--mono); color: var(--ink-faint);
+  letter-spacing: .1em; padding: 6px 2px; margin: 0;
+}
