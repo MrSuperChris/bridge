@@ -15,9 +15,8 @@
        prior "⚙claude:" / OUTCOME lines are gone.
      · A 200 proves nothing. Every write GETs the task back and confirms the value
        actually stored, and reports a real failure when it did not.
-     · State is the kanban COLUMN. While the board stays dual-encoded, the column
-       and the legacy emoji prefix travel in ONE POST — two writes could half-
-       apply and recreate exactly the desync this replaced.
+     · State is the kanban COLUMN. A state change preserves the title; legacy
+       emoji prefixes are read only as a fallback for old, unfiled cards.
    ========================================================================= */
 
 'use strict';
@@ -66,15 +65,8 @@ const STATES = [
 /* Reverse lookup, derived from STATES so the two cannot drift apart. */
 const COL_STATE = Object.fromEntries(STATES.map(s => [s.col, s.key]));
 
-/* The board is DUAL-ENCODED on purpose: state lives in the column (the real
-   channel) and, redundantly, in the emoji title prefix (the old one). The
-   dispatcher, triage and expire_reports still read the prefix, so bridge keeps
-   writing both — one POST, both fields, land-or-fail together.
-
-   Do not flip this to false until nothing else reads the prefix. The read side
-   needs no change when that day comes: classify() already ignores the prefix
-   whenever a column is present. */
-const DUAL_ENCODE = true;
+/* Workflow writes use columns only. Legacy prefixes remain a read fallback
+   for old unfiled cards; changing a state never renames a card. */
 
 /* Not work — the system talking about itself. These belong in the log, not the
    manifest, or 16 daily digests bury the one card that needs a decision.
@@ -166,7 +158,7 @@ function classify(t) {
   const glyphState = STATES.find(s => s.glyph === g) || null;
   const glyphLog = LOG_GLYPHS[g] || null;
 
-  /* COLUMN FIRST — the column is the state. The prefix is the legacy mirror and
+  /* COLUMN FIRST — the column is the state. The prefix is a legacy fallback and
      only gets a vote when there is no column to ask. Three distinct cases:
        · a state column        -> that state, whatever the prefix claims
        · the Done column       -> finished work; belongs in the log, not the
@@ -234,9 +226,8 @@ function classify(t) {
   const content = t.content || '';
   return {
     raw: t, id: t.id, title,
-    /* Show the glyph for the lane the card is actually rendered in. While the
-       board stays dual-encoded these are the same character anyway; if a column
-       and a prefix ever disagree, the row still reads consistently. */
+    /* Show the glyph for the actual lane. An old title prefix may disagree with
+       the current column; it must not affect the displayed workflow state. */
     glyph: st ? st.glyph : g,
     state: st ? st.key : null,
     stateDef: st || null,
@@ -822,16 +813,6 @@ function toast(msg, kind) {
 
 /* ───────────────────────────── writes ───────────────────────────── */
 
-/* The legacy prefix half of the dual encoding. Strip whatever prefix is there,
-   put the new one on — never blind-prepend, or a card ends up "👀 ⬜ [build] …".
-   splitGlyph eats the variation selector too; without that, restating ☀️ as ⬜
-   produced "⬜ ️ Workday report" with an orphaned U+FE0F wedged in the middle. */
-function retitle(title, glyph) {
-  const { glyph: g, rest } = splitGlyph(title);
-  const known = STATES.some(s => s.glyph === g) || Object.hasOwn(LOG_GLYPHS, g);
-  return glyph + ' ' + (known ? rest : (title || '').trim());
-}
-
 async function guarded(fn, statusSel) {
   try {
     status(statusSel, 'Writing…', 'busy');
@@ -847,10 +828,7 @@ async function guarded(fn, statusSel) {
   }
 }
 
-/* Column and prefix go out in ONE partial POST, so they land together or fail
-   together and cannot end up disagreeing. Two sequential writes could half-apply
-   and leave exactly the desync this replaces.
-
+/* State changes write only the column and preserve the existing title.
    writeField() then re-reads and strict-compares every field it sent, which
    quietly turns each state tap into a live probe of the columnId write path: if
    TickTick ever starts dropping columnId the way it drops tags, this raises a
@@ -866,15 +844,9 @@ async function setState(c, key) {
      matching refusal, so setState cannot be reached by any other path either. */
   if (!s || !c.state || key === c.state) return;
   const fields = { columnId: s.col };
-  if (DUAL_ENCODE) {
-    /* Re-read first: the title being restated may have changed under us. */
-    const fresh = await getTask(c.id).catch(() => c.raw);
-    fields.title = retitle(fresh.title || c.title, s.glyph);
-  }
   const ok = await guarded(async () => {
     await writeField(c.id, fields);
-    return `State → ${s.glyph} ${s.label}, ` +
-           `${DUAL_ENCODE ? 'column and prefix both' : 'column'} confirmed on read-back.`;
+    return `State → ${s.glyph} ${s.label}, column confirmed on read-back.`;
   }, '#dStatus');
   /* Only re-open on success. openCard() clears #dStatus, so re-opening after a
      failure wiped the one message saying WHICH field did not stick, leaving a
@@ -1031,10 +1003,10 @@ async function createCard() {
   const s = STATES.find(x => x.key === app.newState);
   /* Everything that carries state, in one object, so the same values are asked
      for and checked. A new card unfiled into no column would land nowhere on the
-     kanban and, once DUAL_ENCODE goes false, nowhere in this console either. */
+     kanban or the workflow list in this console. */
   const want = {
     columnId: s.col,
-    title: DUAL_ENCODE ? retitle(title, s.glyph) : title,
+    title,
     priority: app.newPri,
   };
   try {

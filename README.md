@@ -95,16 +95,10 @@ That last result is what made the old prefix-only design worse than it looked. R
 the title never *ejected* a card from its column — it left the column **stale**, so the board's
 two encodings drifted apart with nothing on screen saying so.
 
-The board is **dual-encoded** for now: bridge writes the column *and* the legacy emoji prefix,
-both fields in **one** partial POST, so they land together or fail together and can never
-disagree. The prefix rewrite still strips the old glyph rather than blind-prepending. Because
-`verify()` strict-compares every field it sent, including `columnId`, each state tap doubles as
-a live probe — if TickTick ever starts dropping `columnId` the way it drops tags, bridge says so
-on screen instead of rotting quietly.
-
-`DUAL_ENCODE` in `app.js` turns the prefix half off. **Leave it `true`** until the dispatcher,
-triage and `expire_reports` stop reading the prefix; the read side already ignores the prefix
-whenever a column is present, so nothing else changes when that day comes.
+Workflow state is **column-only**. Changing state sends `columnId` and preserves the title.
+New cards use the title you entered, without an added workflow emoji. Legacy prefixes remain
+a read fallback for older unfiled cards. Because `verify()` strict-compares every field sent,
+a dropped column update is still reported as a failure on screen.
 
 Every write follows the discipline in `automation/ticktick_api.py`, for the reasons its
 docstring gives:
