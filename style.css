@@ -266,6 +266,21 @@ a.babel-link:hover { color: var(--active); border-color: var(--active); backgrou
 .sys-row[data-ok="warn"] b { color: var(--review); }
 .sys-row[data-ok="bad"]  b { color: var(--blocked); }
 
+/* ───────────────────────── remote-work pause ───────────────────────── */
+.pause-ctl { margin-top: 16px; }
+.pause-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  margin-bottom: 9px;
+}
+/* The tag carries the one fact that matters: on or off. Colour encodes it — amber
+   when a pause is live (something is being suppressed), quiet when it is off. */
+.pause-head .panel-tag[data-on="yes"] {
+  color: var(--review); border-color: color-mix(in srgb, var(--review) 50%, transparent);
+}
+.pause-btns { display: flex; flex-wrap: wrap; gap: 6px; }
+.pause-btn { font: 500 10px/1 var(--mono); letter-spacing: .14em; padding: 8px 11px; }
+.pause-hint { margin-top: 8px; }
+
 /* ───────────────────────── filters + list ───────────────────────── */
 
 .filters { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }

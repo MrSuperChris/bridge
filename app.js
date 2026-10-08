@@ -281,6 +281,7 @@ function render() {
   renderCore();
   renderGauges();
   renderSys();
+  renderPause();
   renderFilters();
   renderList();
   renderLog();
@@ -464,6 +465,16 @@ const TELEMETRY_GLYPH = '\u{1F4E1}';
 const TELEM_OK_MS = 3 * 60e3;    // written within 3 min: the writer is alive
 const TELEM_WARN_MS = 15 * 60e3; // the watchdog relaunches within ~5, so 15 is real trouble
 
+/* The inbound half of the pause (see index.html #pauseCtl and SleeperService/
+   heartbeat.py). A one-line marker appended to the telemetry card; heartbeat reads
+   it, calls remote_pause, and the result returns in the next payload's `pause`.
+   The marker carries a DURATION so the PC clock is authoritative (no device skew),
+   and a NONCE so the PC applies each tap exactly once even if its own rewrite of
+   the card lagged. Must stay byte-compatible with heartbeat.parse_pause_marker:
+   `@@REMOTE-PAUSE@@ {json}` on ONE line, action "set" (hours, note) or "clear". */
+const PAUSE_MARKER = '@@REMOTE-PAUSE@@';
+const PAUSE_HOURS = [1, 2, 4];   // the quick-pick durations offered on the control
+
 function parseTelemetry(tasks) {
   const t = (tasks || []).find(x => (x.title || '').trim().startsWith(TELEMETRY_GLYPH));
   if (!t) return null;
@@ -571,6 +582,96 @@ function whenShort(d) {
   const days = Math.floor((new Date(d).setHours(0, 0, 0, 0) - new Date().setHours(0, 0, 0, 0)) / 864e5);
   const when = days === 0 ? 'today' : days === 1 ? 'tomorrow' : DAYS[d.getDay()];
   return `${when} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+/* ─────────────────────────── remote-work pause ───────────────────────────
+   The pause the PC reads from remote-pause.json can only be set at the keyboard,
+   which is where Chris is NOT when he picks up the iPad. This is the off-machine
+   setter: write a marker to the telemetry card, let heartbeat apply it, read the
+   result back from the dispatcher's own next payload. The write is not the proof —
+   the `pause` block the PC publishes is, and that is a genuinely different path
+   (PC wrote the file, heartbeat republished it) than the marker this sent. */
+
+/* The telemetry card id: preferred from a parsed heartbeat, but fall back to a
+   glyph scan so the control still works when the payload is briefly unparseable
+   (the card exists; only its JSON is momentarily off). null = no card at all. */
+function telemetryCardId() {
+  if (app.telemetry && app.telemetry.id) return app.telemetry.id;
+  const t = (app.tasks || []).find(x => (x.title || '').trim().startsWith(TELEMETRY_GLYPH));
+  return t ? t.id : null;
+}
+
+function pauseMarkerLine(action, hours) {
+  const nonce = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  const req = action === 'set'
+    ? { action: 'set', hours, note: 'via Bridge', nonce }
+    : { action: 'clear', nonce };
+  return PAUSE_MARKER + ' ' + JSON.stringify(req);   // one line: parser reads {…} up to \n
+}
+
+async function sendPause(action, hours) {
+  const id = telemetryCardId();
+  if (!id) {
+    status('#pauseStatus', 'No telemetry card on the board yet — the dispatcher has not published one, so there is nothing to write a pause to.', 'err');
+    return;
+  }
+  const human = action === 'set' ? `Pause the collision-sensitive routines for ${hours}h?`
+                                 : 'Resume now — clear the remote pause?';
+  const live = app.telemetry && app.telemetry.age < TELEM_WARN_MS;
+  const warn = live ? '' : '\n\nThe dispatcher looks SILENT right now — it will only apply this once its heartbeat is back, so it may not take effect immediately.';
+  if (!confirm(human + '\n\nBridge writes a marker to the telemetry card; the PC applies it within about a minute. Nothing happens on your device.' + warn)) return;
+
+  await guarded(async () => {
+    /* Read-then-append, the house rule — but do NOT strict-verify the content back:
+       heartbeat may already have consumed the marker (that is the design), so a
+       read-back that no longer shows it is success, not failure. The real check is
+       the `pause` block the dispatcher publishes next, surfaced by renderPause. */
+    const fresh = await getTask(id);
+    const next = (fresh.content || '').replace(/\s*$/, '') + '\n' + pauseMarkerLine(action, hours) + '\n';
+    const saved = await patch(id, { content: next });
+    if (!saved) throw new Error('No response to the write — nothing was sent.');
+    return action === 'set'
+      ? `Pause request sent — the dispatcher applies it within ~1 min. Watch REMOTE PAUSE.`
+      : `Resume request sent — the pause clears within ~1 min.`;
+  }, '#pauseStatus');
+}
+
+function renderPause() {
+  const stateEl = $('#pauseState');
+  const btns = $('#pauseBtns');
+  const hint = $('#pauseHint');
+  if (!stateEl || !btns) return;
+  btns.innerHTML = '';
+
+  const pause = app.telemetry && app.telemetry.payload && app.telemetry.payload.pause;
+  const live = app.telemetry && app.telemetry.age < TELEM_WARN_MS;
+  const mk = (label, on) => {
+    const b = document.createElement('button');
+    b.className = 'btn btn-ghost pause-btn';
+    b.textContent = label;
+    b.onclick = on;
+    return b;
+  };
+
+  if (pause && typeof pause.seconds_left === 'number' && pause.seconds_left > 0) {
+    const mins = Math.max(1, Math.round(pause.seconds_left / 60));
+    stateEl.textContent = 'ON · ' + (mins < 60 ? mins + 'm left' : Math.round(mins / 60) + 'h left');
+    stateEl.dataset.on = 'yes';
+    const resume = mk('RESUME NOW', () => sendPause('clear'));
+    resume.className = 'btn btn-primary pause-btn';
+    btns.appendChild(resume);
+    PAUSE_HOURS.forEach(h => btns.appendChild(mk('+' + h + 'h', () => sendPause('set', h))));
+    hint.hidden = false;
+    hint.textContent = pause.note
+      ? 'Set ' + (pause.note) + '. Builds that could collide with your remote work are suppressed until it lapses or you resume.'
+      : 'Builds that could collide with your remote work are suppressed until it lapses or you resume.';
+  } else {
+    stateEl.textContent = 'off';
+    stateEl.dataset.on = 'no';
+    PAUSE_HOURS.forEach(h => btns.appendChild(mk('PAUSE ' + h + 'h', () => sendPause('set', h))));
+    hint.hidden = live;   // only explain the caveat when the dispatcher is quiet
+    if (!live) hint.textContent = 'The dispatcher is silent — a pause set now applies only once its heartbeat returns.';
+  }
 }
 
 function renderFilters() {

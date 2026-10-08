@@ -118,6 +118,20 @@
         <span id="sysTag" class="panel-tag" title="Derived from cards on the board, not from the machine">INFERRED</span>
       </div>
       <div id="sysStrip" class="sys-strip"></div>
+      <!-- Remote-work pause: the one inbound gesture from the phone/iPad. There is
+           no socket into the PC (ECOSYSTEM G4), so this writes a one-line marker to
+           the telemetry card that SleeperService/heartbeat.py already owns; the PC
+           reads it within ~a minute and the pause state comes back through the same
+           card. Confirmation is the dispatcher's own reported pause, not this tap. -->
+      <div id="pauseCtl" class="pause-ctl">
+        <div class="pause-head">
+          <span class="panel-title">REMOTE PAUSE</span>
+          <span id="pauseState" class="panel-tag">&mdash;</span>
+        </div>
+        <div id="pauseBtns" class="pause-btns"></div>
+        <p id="pauseHint" class="hint pause-hint" hidden></p>
+        <div id="pauseStatus" class="detail-status" hidden></div>
+      </div>
     </section>
 
     <section class="panel list-panel">
