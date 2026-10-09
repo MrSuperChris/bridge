@@ -560,6 +560,13 @@ textarea:focus, input:focus { outline: none; border-color: rgba(36,214,240,.55);
 .detail-needs[data-verb="tick"]    { --c: var(--ok, #37ba7b); }
 .detail-needs[data-verb="nothing"] { --c: var(--ink-faint); }
 .detail-needs[data-verb="nothing"] .needs-ask { color: var(--ink-faint); }
+/* The tick action, hoisted into the band on a tick card so the ask and the control
+   that fulfils it sit together — no seven-screen scroll on a phone to COMPLETE CARD.
+   Compact and pushed to the end of the band; wraps under the ask on a narrow phone. */
+.detail-needs .needs-tick {
+  margin-left: auto; flex: 0 0 auto; align-self: center;
+  padding: 9px 14px; font-size: 10.5px;
+}
 
 .needs-chip {
   font: 600 9px/1 var(--mono); letter-spacing: .16em; text-transform: uppercase;
@@ -588,6 +595,17 @@ textarea:focus, input:focus { outline: none; border-color: rgba(36,214,240,.55);
 .ny-head .panel-tag {
   font: 600 9px/1 var(--mono); letter-spacing: .18em; color: var(--ink-faint);
 }
+.ny-toggle {
+  margin-left: auto; flex: 0 0 auto;
+  font: 600 9px/1 var(--mono); letter-spacing: .16em; color: var(--ink-dim);
+  background: transparent; border: 1px solid var(--hair);
+  border-radius: 5px; padding: 5px 9px; cursor: pointer;
+}
+.ny-toggle:hover { color: var(--ink); border-color: var(--hair-2); }
+/* Auto-collapse and the toggle are a phone affordance: the list only buries the
+   panels below it on a narrow single column. Desktop keeps the list open with no
+   toggle, so its layout is unchanged. 620px matches the detail-sheet breakpoint. */
+@media (min-width: 621px) { .ny-toggle { display: none; } }
 
 .ny-health {
   display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;

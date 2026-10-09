@@ -389,6 +389,18 @@ const NEEDY_VERBS = { answer: 0, approve: 1, tick: 2 };
 function renderNeedsYou() {
   $('#needsYou').hidden = false;
 
+  /* On a phone the list can run 50+ rows and many screens tall, which buries
+     everything below it on the page — the SYSTEM panel's REMOTE PAUSE control most
+     of all. So at phone width the list starts collapsed to its count (health and the
+     count stay visible); a tap opens it. Desktop is unaffected — it defaults open.
+     Decided once, then left to the toggle. matchMedia is absent under the test
+     harness, which reads as desktop (open). */
+  if (app.nyCollapsed === undefined) {
+    const mq = typeof window !== 'undefined' && window.matchMedia
+      && window.matchMedia('(max-width: 620px)');
+    app.nyCollapsed = Boolean(mq && mq.matches);
+  }
+
   /* ── health verdict, from part A's status card ── */
   const hEl = $('#nyHealth');
   const st = parseStatus(app.tasks);
@@ -425,10 +437,23 @@ function renderNeedsYou() {
   $('#nyCount').textContent = needy.length ? needy.length + ' WAITING' : 'CLEAR';
   const lEl = $('#nyList');
   lEl.innerHTML = '';
+
+  /* The collapse toggle only earns its place when there is a list to hide. With
+     nothing waiting there is nothing to bury, so hide the toggle, show the list
+     open, and bail. */
+  const toggle = $('#nyToggle');
   if (!needy.length) {
+    toggle.hidden = true;
+    lEl.hidden = false;
     lEl.innerHTML = `<p class="ny-empty">Nothing on the board is waiting on you.</p>`;
     return;
   }
+  toggle.hidden = false;
+  toggle.textContent = app.nyCollapsed ? 'SHOW ▾' : 'HIDE ▴';
+  toggle.setAttribute('aria-expanded', String(!app.nyCollapsed));
+  toggle.onclick = () => { app.nyCollapsed = !app.nyCollapsed; renderNeedsYou(); };
+  lEl.hidden = app.nyCollapsed;
+
   needy.forEach(({ c, nb }) => {
     const b = document.createElement('button');
     b.className = 'ny-row';
@@ -854,6 +879,19 @@ function openCard(id) {
     dNeeds.dataset.verb = needs.verb || 'other';
     dNeeds.innerHTML = `<span class="needs-verb">${esc(needs.verb || 'needs')}</span>` +
                        `<span class="needs-ask">${esc(needs.ask)}</span>`;
+    /* A tick card is finished work waiting on the one gesture only Chris can make:
+       the completing tap. That control (COMPLETE CARD) lives at the very bottom of
+       the sheet — on a phone, several screens below this band — so on mobile the ask
+       and the action are a long scroll apart and worded differently. Put the action
+       right here beside the ask, worded to match "tick", so they are one tap apart. */
+    if (needs.verb === 'tick') {
+      const tickBtn = document.createElement('button');
+      tickBtn.id = 'dNeedsTick';
+      tickBtn.className = 'btn btn-done needs-tick';
+      tickBtn.textContent = 'TICK OFF CARD';
+      tickBtn.onclick = () => completeCard(c);
+      dNeeds.appendChild(tickBtn);
+    }
   }
   $('#dBody').innerHTML = renderBody(c.content);
   $('#dEdit').value = c.content || '';
@@ -894,7 +932,13 @@ function openCard(id) {
 
   $('#dAppendBtn').onclick = () => appendNote(c);
   $('#dEditBtn').onclick   = () => saveBody(c);
-  $('#dComplete').onclick  = () => completeCard(c);
+  /* Keep the bottom control's wording in step with the ask: on a tick card both
+     complete controls (this one and the inline one in the band above) read "TICK
+     OFF CARD", so the word in the band and the button plainly match. Every other
+     card keeps the generic label. */
+  const dComplete = $('#dComplete');
+  dComplete.textContent = (needs && needs.verb === 'tick') ? 'TICK OFF CARD' : 'COMPLETE CARD';
+  dComplete.onclick  = () => completeCard(c);
 }
 
 function closeDetail() { $('#detail').hidden = true; app.open = null; }
@@ -1079,7 +1123,7 @@ async function saveBody(c) {
 }
 
 async function completeCard(c) {
-  if (!confirm(`Complete "${c.clean || c.title}"?\n\nIt disappears from the API and its content is not retrievable afterwards.`)) return;
+  if (!confirm(`Tick off "${c.clean || c.title}"?\n\nThis marks the card complete and clears it from the board. Its content stays readable in TickTick's completed-task history.`)) return;
   try {
     status('#dStatus', 'Completing…', 'busy');
     await call('POST', `/project/${QUEUE_ID}/task/${c.id}/complete`);

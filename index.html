@@ -86,6 +86,10 @@
     <div class="ny-head">
       <span class="panel-title">NEEDS YOU</span>
       <span id="nyCount" class="panel-tag">&mdash;</span>
+      <!-- Collapses the list (not the health line or the count) so the panels below
+           it — REMOTE PAUSE especially — are reachable on a phone without scrolling
+           past 50 rows. Starts collapsed at phone width, open on desktop. -->
+      <button id="nyToggle" class="ny-toggle" type="button" aria-expanded="true" hidden>HIDE &#x25b4;</button>
     </div>
     <div id="nyHealth" class="ny-health" hidden></div>
     <div id="nyList" class="ny-list"></div>
@@ -203,8 +207,8 @@
         <a id="dTickTick" class="btn btn-ghost" target="_blank" rel="noopener">OPEN IN TICKTICK</a>
         <button id="dComplete" class="btn btn-done">COMPLETE CARD</button>
       </div>
-      <p class="danger-note">Completing removes the card from the API for good &mdash; its
-        content is not retrievable afterwards.</p>
+      <p class="danger-note">Completing marks the card done and clears it from the board.
+        Its content stays readable in TickTick&rsquo;s completed-task history.</p>
     </div>
     <div id="dStatus" class="detail-status" hidden></div>
   </article>
